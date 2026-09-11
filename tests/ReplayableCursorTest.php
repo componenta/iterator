@@ -61,6 +61,39 @@ it('replays duplicate and null keys independently', function (): void {
         ->and(iterator_to_array($replayable->cursor(), false))->toBe(['null', 'first', 'second']);
 });
 
+it('does not rewind the source twice before the first foreach traversal', function (): void {
+    $source = new class implements Iterator {
+        private array $values = [1, 2, 3];
+        private int $position = 0;
+        private int $rewinds = 0;
+
+        public function current(): mixed { return $this->values[$this->position] ?? null; }
+        public function key(): mixed { return $this->position; }
+        public function next(): void { $this->position++; }
+        public function valid(): bool { return $this->position < count($this->values); }
+
+        public function rewind(): void
+        {
+            $this->rewinds++;
+
+            if ($this->rewinds > 1) {
+                throw new LogicException('source may only be rewound once');
+            }
+
+            $this->position = 0;
+        }
+    };
+
+    $replayable = new ReplayableIterator($source);
+    $values = [];
+
+    foreach ($replayable as $value) {
+        $values[] = $value;
+    }
+
+    expect($values)->toBe([1, 2, 3]);
+});
+
 it('rejects cyclic IteratorAggregate chains instead of unwrapping forever', function (): void {
     $source = new class implements IteratorAggregate {
         private int $calls = 0;
