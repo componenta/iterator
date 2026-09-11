@@ -147,7 +147,14 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
 
     private function unwrapIterator(Iterator|IteratorAggregate $iterable): Iterator
     {
+        $seen = new \SplObjectStorage();
+
         while ($iterable instanceof IteratorAggregate) {
+            if ($seen->contains($iterable)) {
+                throw new \RuntimeException('IteratorAggregate cycle detected');
+            }
+
+            $seen->attach($iterable);
             $iterable = $iterable->getIterator();
         }
 
