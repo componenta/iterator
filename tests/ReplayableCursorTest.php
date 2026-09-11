@@ -80,3 +80,22 @@ it('rejects cyclic IteratorAggregate chains instead of unwrapping forever', func
     expect(fn() => new ReplayableIterator($source))
         ->toThrow(RuntimeException::class, 'IteratorAggregate cycle detected');
 });
+
+it('rejects multi-object IteratorAggregate cycles', function (): void {
+    $factory = static fn() => new class implements IteratorAggregate {
+        public ?IteratorAggregate $next = null;
+
+        public function getIterator(): Traversable
+        {
+            return $this->next ?? new EmptyIterator();
+        }
+    };
+
+    $first = $factory();
+    $second = $factory();
+    $first->next = $second;
+    $second->next = $first;
+
+    expect(fn() => new ReplayableIterator($first))
+        ->toThrow(RuntimeException::class, 'IteratorAggregate cycle detected');
+});
