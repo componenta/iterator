@@ -4,61 +4,57 @@ declare(strict_types=1);
 
 namespace Componenta\Stdlib;
 
-use Iterator;
-use Countable;
 use Componenta\Arrayable\Arrayable;
+use Countable;
 use Generator;
+use Iterator;
 use IteratorAggregate;
 
 /**
  * Iterator wrapper that caches traversed elements for replay.
  *
- * Enables multiple iterations over single-use sources like generators
- * by memoizing elements on first traversal. Subsequent iterations
- * read from cache without touching the original source.
- *
- * Key features:
- * - Lazy traversal with on-demand caching
- * - Preserves original keys (including null and duplicates)
- * - Safe for generators (no rewind attempts)
- * - Memory-efficient for partial iterations
+ * Direct Iterator methods retain their traditional single-cursor behavior.
+ * Use cursor() whenever independent or interleaved traversal is required.
+ * All cursors share the same lazy cache while keeping their positions local.
  */
 final class ReplayableIterator implements Iterator, Countable, Arrayable
 {
-    /**
-     * Cache of traversed items as [key, value] pairs.
-     * Using positional storage to correctly handle duplicate keys.
-     *
-     * @var list<array{mixed, mixed}>
-     */
+    /** @var list<array{mixed, mixed}> */
     private array $cache = [];
 
-    /** @var int Current cache size (avoids repeated count() calls). */
     private(set) int $cacheSize = 0;
-
-    /** @var bool Whether the iterable has been fully traversed. */
     private(set) bool $traversed = false;
-
-    /** @var int Current position in iteration (0-indexed). */
     private(set) int $currentPosition = 0;
 
-    /** @var Iterator|null Underlying iterator for lazy traversal. */
     private ?Iterator $iterable = null;
 
-    /**
-     * @param iterable<mixed, mixed> $iterable The iterable to wrap.
-     */
+    /** @param iterable<mixed, mixed> $iterable */
     public function __construct(iterable $iterable)
     {
-        is_array($iterable) ? $this->initializeFromArray($iterable)
+        is_array($iterable)
+            ? $this->initializeFromArray($iterable)
             : $this->initializeFromIterator($iterable);
     }
 
     /**
-     * Returns the total number of items.
+     * Returns an independent lazy cursor over the replayable sequence.
      *
-     * Forces full traversal if not already done.
+     * Multiple cursors may be consumed in any interleaving order. They share
+     * cached source entries but never share a cursor position.
+     *
+     * @return Generator<mixed, mixed>
      */
+    public function cursor(): Generator
+    {
+        $position = 0;
+
+        while ($this->ensureCached($position)) {
+            [$key, $value] = $this->cache[$position];
+            yield $key => $value;
+            $position++;
+        }
+    }
+
     public function count(): int
     {
         $this->traverseFully();
@@ -66,90 +62,48 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
         return $this->cacheSize;
     }
 
-    /**
-     * Returns the current element.
-     */
     public function current(): mixed
     {
-        if (!$this->valid()) {
+        if (!$this->ensureCached($this->currentPosition)) {
             return null;
         }
-
-        $this->cacheCurrentIfNeeded();
 
         return $this->cache[$this->currentPosition][1];
     }
 
-    /**
-     * Returns the key of the current element.
-     */
     public function key(): mixed
     {
-        if (!$this->valid()) {
+        if (!$this->ensureCached($this->currentPosition)) {
             return null;
         }
-
-        $this->cacheCurrentIfNeeded();
 
         return $this->cache[$this->currentPosition][0];
     }
 
-    /**
-     * Moves forward to the next element.
-     */
     public function next(): void
     {
-        // Ensure current element is cached before advancing position
-        if ($this->valid()) {
-            $this->cacheCurrentIfNeeded();
-        }
-
+        // Preserve the existing Iterator contract: advancing past the current
+        // position must still cache the skipped item for later replay.
+        $this->ensureCached($this->currentPosition);
         $this->currentPosition++;
     }
 
-    /**
-     * Checks whether the current position is valid.
-     */
     public function valid(): bool
     {
-        if ($this->traversed) {
-            return $this->currentPosition < $this->cacheSize;
-        }
-
-        // Position is within cache
-        if ($this->currentPosition < $this->cacheSize) {
-            return true;
-        }
-
-        // Check underlying iterator
-        $isValid = $this->iterable?->valid() ?? false;
-
-        if (!$isValid) {
-            $this->markAsTraversed();
-        }
-
-        return $isValid;
+        return $this->ensureCached($this->currentPosition);
     }
 
-    /**
-     * Rewinds the iterator to the first element.
-     */
     public function rewind(): void
     {
         $this->currentPosition = 0;
 
-        // Generators cannot be rewound; for other iterators, rewind only if
-        // we haven't cached anything yet (to avoid inconsistency)
         if (!$this->traversed && $this->cacheSize === 0 && !$this->iterable instanceof Generator) {
-            $this->iterable->rewind();
+            $this->iterable?->rewind();
         }
     }
 
     /**
-     * Forces full traversal and returns all items as an array.
-     *
-     * @param bool $preserveKeys Whether to preserve original keys.
-     *                           Note: with duplicate keys, later values overwrite earlier ones.
+     * @param bool $preserveKeys With duplicate keys, later values overwrite earlier ones.
      * @return array<mixed, mixed>|list<mixed>
      */
     public function toArray(bool $preserveKeys = false): array
@@ -161,6 +115,7 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
         }
 
         $result = [];
+
         foreach ($this->cache as [$key, $value]) {
             $result[$key] = $value;
         }
@@ -168,40 +123,28 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
         return $result;
     }
 
-    /**
-     * Initializes state from an array source.
-     *
-     * @param array<mixed, mixed> $array
-     */
+    /** @param array<mixed, mixed> $array */
     private function initializeFromArray(array $array): void
     {
         foreach ($array as $key => $value) {
             $this->cache[] = [$key, $value];
         }
+
         $this->cacheSize = count($this->cache);
         $this->traversed = true;
     }
 
-    /**
-     * Initializes state from an iterator source.
-     *
-     * @param Iterator|IteratorAggregate $iterable
-     */
+    /** @param Iterator|IteratorAggregate $iterable */
     private function initializeFromIterator(Iterator|IteratorAggregate $iterable): void
     {
         $iterator = $this->unwrapIterator($iterable);
-
         $this->iterable = $iterator;
 
-        // Ensure iterator is at the beginning (except for generators)
         if (!$iterator instanceof Generator) {
             $iterator->rewind();
         }
     }
 
-    /**
-     * Recursively unwraps IteratorAggregate to get the underlying Iterator.
-     */
     private function unwrapIterator(Iterator|IteratorAggregate $iterable): Iterator
     {
         while ($iterable instanceof IteratorAggregate) {
@@ -212,41 +155,43 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
     }
 
     /**
-     * Caches the current element from the underlying iterator if not already cached.
-     * After caching, advances the underlying iterator to prevent double-caching.
+     * Ensures that an entry at the requested cache position exists if the
+     * underlying iterable can still produce it.
      */
-    private function cacheCurrentIfNeeded(): void
+    private function ensureCached(int $position): bool
     {
-        // Already cached or fully traversed
-        if ($this->traversed || $this->currentPosition < $this->cacheSize) {
-            return;
+        if ($position < $this->cacheSize) {
+            return true;
         }
 
-        // Underlying iterator must be valid at this point
-        if (!$this->iterable->valid()) {
-            return;
+        if ($this->traversed) {
+            return false;
         }
 
-        $this->cache[] = [
-            $this->iterable->key(),
-            $this->iterable->current(),
-        ];
-        $this->cacheSize++;
+        while ($position >= $this->cacheSize) {
+            if ($this->iterable === null || !$this->iterable->valid()) {
+                $this->markAsTraversed();
 
-        // Advance immediately to prevent caching same element twice
-        $this->iterable->next();
+                return false;
+            }
+
+            $this->cache[] = [
+                $this->iterable->key(),
+                $this->iterable->current(),
+            ];
+            $this->cacheSize++;
+            $this->iterable->next();
+        }
+
+        return true;
     }
 
-    /**
-     * Forces complete traversal of the underlying iterator.
-     */
     private function traverseFully(): void
     {
         if ($this->traversed || $this->iterable === null) {
             return;
         }
 
-        // Simply cache all remaining elements from the iterator
         while ($this->iterable->valid()) {
             $this->cache[] = [
                 $this->iterable->key(),
@@ -259,9 +204,6 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
         $this->markAsTraversed();
     }
 
-    /**
-     * Marks the iterator as fully traversed and releases the source iterator.
-     */
     private function markAsTraversed(): void
     {
         $this->traversed = true;
