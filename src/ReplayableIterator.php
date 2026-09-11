@@ -82,9 +82,6 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
 
     public function next(): void
     {
-        // Preserve the existing Iterator contract: advancing past the current
-        // position must still cache the skipped item for later replay.
-        $this->ensureCached($this->currentPosition);
         $this->currentPosition++;
     }
 
@@ -96,10 +93,6 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
     public function rewind(): void
     {
         $this->currentPosition = 0;
-
-        if (!$this->traversed && $this->cacheSize === 0 && !$this->iterable instanceof Generator) {
-            $this->iterable?->rewind();
-        }
     }
 
     /**
