@@ -60,3 +60,23 @@ it('replays duplicate and null keys independently', function (): void {
     expect(iterator_to_array($replayable->cursor(), false))->toBe(['null', 'first', 'second'])
         ->and(iterator_to_array($replayable->cursor(), false))->toBe(['null', 'first', 'second']);
 });
+
+it('rejects cyclic IteratorAggregate chains instead of unwrapping forever', function (): void {
+    $source = new class implements IteratorAggregate {
+        private int $calls = 0;
+
+        public function getIterator(): Traversable
+        {
+            $this->calls++;
+
+            if ($this->calls > 1) {
+                throw new LogicException('cycle guard reached');
+            }
+
+            return $this;
+        }
+    };
+
+    expect(fn() => new ReplayableIterator($source))
+        ->toThrow(RuntimeException::class, 'IteratorAggregate cycle detected');
+});
