@@ -19,7 +19,7 @@ composer require componenta/iterator
 
 ## ReplayableIterator
 
-`ReplayableIterator` wraps arrays, iterators, iterator aggregates, and generators. It caches traversed values so a one-shot source can be iterated again.
+`ReplayableIterator` wraps arrays, iterators, iterator aggregates, and generators. It caches traversed entries lazily so a one-shot source can be replayed without reading the whole source up front.
 
 ```php
 use Componenta\Stdlib\ReplayableIterator;
@@ -32,7 +32,17 @@ $iterator = new ReplayableIterator((function () {
 $iterator->toArray(preserveKeys: true); // ['a' => 1, 'b' => 2]
 ```
 
-Calling `count()` or `toArray()` forces full traversal of the wrapped source.
+The object still implements the traditional single-cursor `Iterator` API. When two consumers must traverse the same source independently or concurrently, create independent cursors:
+
+```php
+$first = $iterator->cursor();
+$second = $iterator->cursor();
+
+$first->next();
+// $second still points at its own first entry.
+```
+
+Every cursor has a local position and shares only the lazy replay cache. Duplicate and `null` source keys are retained internally. Calling `count()` or `toArray()` forces full traversal of the wrapped source.
 
 ## Reverse Iteration
 
@@ -54,6 +64,15 @@ Calling `count()` or `toArray()` forces full traversal of the wrapped source.
 ## Array Conversion
 
 `IteratorToArray` exposes a `toArray()` contract for iterator classes that can materialize their contents.
+
+## Development
+
+```bash
+composer install
+composer test
+```
+
+CI validates Composer metadata, lints PHP files, and runs Pest on PHP 8.4 and 8.5.
 
 ## Memory Notes
 
