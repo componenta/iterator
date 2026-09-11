@@ -1,0 +1,39 @@
+name: Mutation Audit
+
+on:
+  push:
+    branches:
+      - fix/replayable-independent-cursors-20260911
+
+jobs:
+  mutate:
+    name: Pest mutation testing
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          coverage: pcov
+          tools: composer:v2
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Run mutation audit
+        shell: bash
+        run: |
+          set -o pipefail
+          ./vendor/bin/pest --mutate --everything --parallel --covered-only 2>&1 | tee mutation-report.txt
+
+      - name: Upload mutation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-report
+          path: mutation-report.txt
+          if-no-files-found: error
