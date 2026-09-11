@@ -164,12 +164,12 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
             return true;
         }
 
-        if ($this->traversed) {
+        if ($this->iterable === null) {
             return false;
         }
 
         while ($position >= $this->cacheSize) {
-            if ($this->iterable === null || !$this->iterable->valid()) {
+            if (!$this->iterable->valid()) {
                 $this->markAsTraversed();
 
                 return false;
@@ -188,7 +188,7 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
 
     private function traverseFully(): void
     {
-        if ($this->traversed || $this->iterable === null) {
+        if ($this->iterable === null) {
             return;
         }
 
