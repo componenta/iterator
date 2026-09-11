@@ -134,3 +134,28 @@ it('rejects multi-object IteratorAggregate cycles', function (): void {
     expect(fn() => new ReplayableIterator($first))
         ->toThrow(RuntimeException::class, 'IteratorAggregate cycle detected');
 });
+
+it('does not use deprecated SplObjectStorage APIs while unwrapping aggregates', function (): void {
+    $source = new class implements IteratorAggregate {
+        public function getIterator(): Traversable
+        {
+            return new ArrayIterator([1, 2, 3]);
+        }
+    };
+
+    set_error_handler(static function (int $severity, string $message): bool {
+        if ($severity === E_DEPRECATED && str_contains($message, 'SplObjectStorage')) {
+            throw new ErrorException($message);
+        }
+
+        return false;
+    });
+
+    try {
+        $replayable = new ReplayableIterator($source);
+
+        expect($replayable->toArray())->toBe([1, 2, 3]);
+    } finally {
+        restore_error_handler();
+    }
+});

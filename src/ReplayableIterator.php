@@ -143,11 +143,11 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
         $seen = new \SplObjectStorage();
 
         while ($iterable instanceof IteratorAggregate) {
-            if ($seen->contains($iterable)) {
+            if ($seen->offsetExists($iterable)) {
                 throw new \RuntimeException('IteratorAggregate cycle detected');
             }
 
-            $seen->attach($iterable);
+            $seen->offsetSet($iterable, null);
             $iterable = $iterable->getIterator();
         }
 
