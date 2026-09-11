@@ -1,9 +1,7 @@
 name: Mutation Audit
 
 on:
-  push:
-    branches:
-      - fix/replayable-independent-cursors-20260911
+  workflow_dispatch:
 
 jobs:
   mutate:
