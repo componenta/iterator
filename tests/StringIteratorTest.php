@@ -15,7 +15,10 @@ it('iterates UTF-8 strings by characters rather than bytes', function (): void {
 it('moves to explicit character positions and rejects out-of-range positions', function (): void {
     $iterator = new StringIterator('abcd');
 
-    expect($iterator->moveTo(2))->toBe($iterator)
+    expect($iterator->moveTo(0))->toBe($iterator)
+        ->and($iterator->current())->toBe('a')
+        ->and($iterator->key())->toBe(0)
+        ->and($iterator->moveTo(2))->toBe($iterator)
         ->and($iterator->current())->toBe('c')
         ->and($iterator->key())->toBe(2);
 
@@ -23,8 +26,13 @@ it('moves to explicit character positions and rejects out-of-range positions', f
         ->and(fn() => $iterator->moveTo(4))->toThrow(OutOfRangeException::class);
 });
 
-it('moves forward and backward without crossing character boundaries', function (): void {
+it('moves one character by default and clamps at string boundaries', function (): void {
     $iterator = new StringIterator('abcd');
+
+    expect($iterator->forward())->toBe($iterator)
+        ->and($iterator->current())->toBe('b')
+        ->and($iterator->backward())->toBe($iterator)
+        ->and($iterator->current())->toBe('a');
 
     $iterator->forward(10);
     expect($iterator->current())->toBe('d')
@@ -39,6 +47,15 @@ it('moves forward and backward without crossing character boundaries', function 
         ->and($iterator->isStart())->toBeTrue();
 });
 
+it('rejects negative movement distances', function (): void {
+    $iterator = new StringIterator('abcd');
+
+    expect(fn() => $iterator->forward(-1))->toThrow(InvalidArgumentException::class)
+        ->and(fn() => $iterator->backward(-1))->toThrow(InvalidArgumentException::class)
+        ->and($iterator->current())->toBe('a')
+        ->and($iterator->key())->toBe(0);
+});
+
 it('reads and peeks without moving the cursor', function (): void {
     $iterator = new StringIterator('Aβ🙂Z');
     $iterator->moveTo(1);
@@ -48,6 +65,7 @@ it('reads and peeks without moving the cursor', function (): void {
         ->and($iterator->peek())->toBe('🙂')
         ->and($iterator->peek(2))->toBe('Z')
         ->and($iterator->peek(-1))->toBe('A')
+        ->and($iterator->peek(-2))->toBeNull()
         ->and($iterator->peek(3))->toBeNull()
         ->and($iterator->current())->toBe('β')
         ->and($iterator->key())->toBe(1);
@@ -79,7 +97,10 @@ it('handles an empty string consistently', function (): void {
         ->and($iterator->current())->toBeNull()
         ->and($iterator->read())->toBe('')
         ->and($iterator->remaining())->toBe('')
-        ->and($iterator->peek())->toBeNull();
+        ->and($iterator->peek())->toBeNull()
+        ->and($iterator->forward())->toBe($iterator)
+        ->and($iterator->backward())->toBe($iterator)
+        ->and($iterator->key())->toBe(0);
 });
 
 it('creates an independent iterator when replacing the string', function (): void {

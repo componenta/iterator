@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Componenta\Stdlib;
 
+use InvalidArgumentException;
 use OutOfRangeException;
 
 /**
@@ -17,7 +18,7 @@ final class StringIterator implements \Iterator, \Stringable, \Countable
     private(set) int $length;
 
     /** @var int Current position in the string. */
-    private(set) int $position = 0;
+    private(set) int $position;
 
     /**
      * @param string $string The string to iterate over.
@@ -28,6 +29,7 @@ final class StringIterator implements \Iterator, \Stringable, \Countable
         private readonly string $encoding = 'UTF-8'
     ) {
         $this->length = mb_strlen($string, $this->encoding);
+        $this->position = 0;
     }
 
     /**
@@ -76,7 +78,6 @@ final class StringIterator implements \Iterator, \Stringable, \Countable
             return null;
         }
 
-        // Use mb_substr for proper multibyte support
         return mb_substr($this->string, $this->position, 1, $this->encoding);
     }
 
@@ -101,7 +102,7 @@ final class StringIterator implements \Iterator, \Stringable, \Countable
      */
     public function valid(): bool
     {
-        return $this->position >= 0 && $this->position < $this->length;
+        return $this->position < $this->length;
     }
 
     /**
@@ -150,19 +151,23 @@ final class StringIterator implements \Iterator, \Stringable, \Countable
     /**
      * Moves forward by a number of characters.
      *
-     * Stops at the end of the string.
+     * Stops at the last character of the string.
      *
      * @param int $steps Number of characters to move forward.
      * @return $this
+     * @throws InvalidArgumentException If steps is negative.
      */
     public function forward(int $steps = 1): self
     {
-        $this->position = min($this->position + $steps, $this->length - 1);
-
-        // Handle empty string edge case
-        if ($this->length === 0) {
-            $this->position = 0;
+        if ($steps < 0) {
+            throw new InvalidArgumentException('Forward steps must be non-negative');
         }
+
+        if ($this->length === 0) {
+            return $this;
+        }
+
+        $this->position = min($this->position + $steps, $this->length - 1);
 
         return $this;
     }
@@ -174,9 +179,14 @@ final class StringIterator implements \Iterator, \Stringable, \Countable
      *
      * @param int $steps Number of characters to move backward.
      * @return $this
+     * @throws InvalidArgumentException If steps is negative.
      */
     public function backward(int $steps = 1): self
     {
+        if ($steps < 0) {
+            throw new InvalidArgumentException('Backward steps must be non-negative');
+        }
+
         $this->position = max($this->position - $steps, 0);
         return $this;
     }
@@ -189,17 +199,11 @@ final class StringIterator implements \Iterator, \Stringable, \Countable
      */
     public function read(?int $length = null): string
     {
-        if ($this->isEnd()) {
-            return '';
-        }
-
         return mb_substr($this->string, $this->position, $length, $this->encoding);
     }
 
     /**
      * Returns remaining characters from current position.
-     *
-     * @return string
      */
     public function remaining(): string
     {
@@ -207,7 +211,7 @@ final class StringIterator implements \Iterator, \Stringable, \Countable
     }
 
     /**
-     * Peeks at the next character without moving position.
+     * Peeks at a character without moving position.
      *
      * @param int $offset Offset from current position (default: 1).
      * @return string|null The character or null if out of bounds.
