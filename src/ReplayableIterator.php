@@ -169,6 +169,10 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
         }
 
         while ($position >= $this->cacheSize) {
+            if ($this->cacheSize > 0) {
+                $this->iterable->next();
+            }
+
             if (!$this->iterable->valid()) {
                 $this->markAsTraversed();
 
@@ -180,7 +184,6 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
                 $this->iterable->current(),
             ];
             $this->cacheSize++;
-            $this->iterable->next();
         }
 
         return true;
@@ -190,6 +193,10 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
     {
         if ($this->iterable === null) {
             return;
+        }
+
+        if ($this->cacheSize > 0) {
+            $this->iterable->next();
         }
 
         while ($this->iterable->valid()) {
