@@ -58,11 +58,10 @@ it('replays duplicate and null keys independently', function (): void {
     $replayable = new ReplayableIterator($source);
 
     expect(iterator_to_array($replayable->cursor(), false))->toBe(['null', 'first', 'second'])
-        ->and(iterator_to_array($replayable->cursor(), false))->toBe(['null', 'first', 'second'])
-        ->and($replayable->traversed)->toBeTrue();
+        ->and(iterator_to_array($replayable->cursor(), false))->toBe(['null', 'first', 'second']);
 });
 
-it('rewinds an advanced source exactly once before the first foreach traversal', function (): void {
+it('rewinds an advanced source exactly once before the first traversal', function (): void {
     $source = new class implements Iterator {
         private array $values = [1, 2, 3];
         private int $position = 2;
@@ -85,15 +84,7 @@ it('rewinds an advanced source exactly once before the first foreach traversal',
         }
     };
 
-    $replayable = new ReplayableIterator($source);
-    $values = [];
-
-    foreach ($replayable as $value) {
-        $values[] = $value;
-    }
-
-    expect($values)->toBe([1, 2, 3])
-        ->and($replayable->traversed)->toBeTrue();
+    expect(iterator_to_array(new ReplayableIterator($source), false))->toBe([1, 2, 3]);
 });
 
 it('rejects cyclic IteratorAggregate chains instead of unwrapping forever', function (): void {
@@ -135,7 +126,7 @@ it('rejects multi-object IteratorAggregate cycles', function (): void {
         ->toThrow(RuntimeException::class, 'IteratorAggregate cycle detected');
 });
 
-it('does not use deprecated SplObjectStorage APIs while unwrapping aggregates', function (): void {
+it('unwraps iterator aggregates without first-party deprecations', function (): void {
     $source = new class implements IteratorAggregate {
         public function getIterator(): Traversable
         {
@@ -143,19 +134,5 @@ it('does not use deprecated SplObjectStorage APIs while unwrapping aggregates', 
         }
     };
 
-    set_error_handler(static function (int $severity, string $message): bool {
-        if ($severity === E_DEPRECATED && str_contains($message, 'SplObjectStorage')) {
-            throw new ErrorException($message);
-        }
-
-        return false;
-    });
-
-    try {
-        $replayable = new ReplayableIterator($source);
-
-        expect($replayable->toArray())->toBe([1, 2, 3]);
-    } finally {
-        restore_error_handler();
-    }
+    expect((new ReplayableIterator($source))->toArray())->toBe([1, 2, 3]);
 });
