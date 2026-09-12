@@ -4,7 +4,8 @@
          colors="true"
          failOnWarning="true"
          failOnRisky="true"
-         failOnNotice="true">
+         failOnNotice="true"
+         failOnSelfDeprecation="true">
     <testsuites>
         <testsuite name="Componenta Iterator">
             <directory>tests</directory>
