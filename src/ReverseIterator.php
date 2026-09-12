@@ -13,11 +13,13 @@ final class ReverseIterator implements \Iterator, Arrayable
 {
     use IteratorToArray;
 
-    /** @var array Cached data for reverse iteration. */
-    private array $data = [];
+    /** @var list<array{mixed, mixed}> */
+    private array $entries = [];
 
     /** @var iterable|null Original iterable (consumed on first rewind). */
     private ?iterable $iterable;
+
+    private int $position = -1;
 
     /**
      * @param iterable $iterable The iterable to reverse.
@@ -43,7 +45,9 @@ final class ReverseIterator implements \Iterator, Arrayable
      */
     public function current(): mixed
     {
-        return current($this->data);
+        return $this->valid()
+            ? $this->entries[$this->position][1]
+            : null;
     }
 
     /**
@@ -51,7 +55,7 @@ final class ReverseIterator implements \Iterator, Arrayable
      */
     public function next(): void
     {
-        prev($this->data);
+        --$this->position;
     }
 
     /**
@@ -59,7 +63,9 @@ final class ReverseIterator implements \Iterator, Arrayable
      */
     public function key(): mixed
     {
-        return key($this->data);
+        return $this->valid()
+            ? $this->entries[$this->position][0]
+            : null;
     }
 
     /**
@@ -67,7 +73,7 @@ final class ReverseIterator implements \Iterator, Arrayable
      */
     public function valid(): bool
     {
-        return key($this->data) !== null;
+        return $this->position >= 0;
     }
 
     /**
@@ -76,12 +82,13 @@ final class ReverseIterator implements \Iterator, Arrayable
     public function rewind(): void
     {
         if ($this->iterable !== null) {
-            $this->data = is_array($this->iterable)
-                ? $this->iterable
-                : iterator_to_array($this->iterable);
+            foreach ($this->iterable as $key => $value) {
+                $this->entries[] = [$key, $value];
+            }
+
             $this->iterable = null;
         }
 
-        end($this->data);
+        $this->position = count($this->entries) - 1;
     }
 }

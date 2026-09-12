@@ -14,6 +14,34 @@ it('iterates arrays in reverse order while preserving keys', function (): void {
     ]);
 });
 
+it('preserves duplicate and null keys from iterator sources', function (): void {
+    $source = new class implements Iterator {
+        private array $entries = [
+            ['same', 1],
+            ['same', 2],
+            [null, 3],
+        ];
+        private int $position = 0;
+
+        public function current(): mixed { return $this->entries[$this->position][1] ?? null; }
+        public function key(): mixed { return $this->entries[$this->position][0] ?? null; }
+        public function next(): void { $this->position++; }
+        public function valid(): bool { return $this->position < count($this->entries); }
+        public function rewind(): void { $this->position = 0; }
+    };
+
+    $result = [];
+    foreach (new ReverseIterator($source) as $key => $value) {
+        $result[] = [$key, $value];
+    }
+
+    expect($result)->toBe([
+        [null, 3],
+        ['same', 2],
+        ['same', 1],
+    ]);
+});
+
 it('consumes a lazy source only when iteration starts and replays cached values', function (): void {
     $visited = 0;
     $source = (static function () use (&$visited): Generator {
