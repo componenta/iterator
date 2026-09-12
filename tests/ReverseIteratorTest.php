@@ -4,6 +4,14 @@ declare(strict_types=1);
 
 use Componenta\Stdlib\ReverseIterator;
 
+it('starts invalid until reverse traversal is rewound', function (): void {
+    $iterator = new ReverseIterator([1, 2, 3]);
+
+    expect($iterator->valid())->toBeFalse()
+        ->and($iterator->current())->toBeNull()
+        ->and($iterator->key())->toBeNull();
+});
+
 it('iterates arrays in reverse order while preserving keys', function (): void {
     $iterator = new ReverseIterator(['a' => 1, 'b' => 2, 'c' => 3]);
 
