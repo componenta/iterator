@@ -22,15 +22,23 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
     /** @var list<array{mixed, mixed}> */
     private array $cache = [];
 
-    private(set) int $cacheSize = 0;
-    private(set) bool $traversed = false;
-    private(set) int $currentPosition = 0;
+    public int $cacheSize {
+        get => count($this->cache);
+    }
+
+    public bool $traversed {
+        get => $this->iterable === null;
+    }
+
+    private(set) int $currentPosition;
 
     private ?Iterator $iterable = null;
 
     /** @param iterable<mixed, mixed> $iterable */
     public function __construct(iterable $iterable)
     {
+        $this->currentPosition = 0;
+
         is_array($iterable)
             ? $this->initializeFromArray($iterable)
             : $this->initializeFromIterator($iterable);
@@ -122,9 +130,6 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
         foreach ($array as $key => $value) {
             $this->cache[] = [$key, $value];
         }
-
-        $this->cacheSize = count($this->cache);
-        $this->traversed = true;
     }
 
     /** @param Iterator|IteratorAggregate $iterable */
@@ -183,7 +188,6 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
                 $this->iterable->key(),
                 $this->iterable->current(),
             ];
-            $this->cacheSize++;
         }
 
         return true;
@@ -204,7 +208,6 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
                 $this->iterable->key(),
                 $this->iterable->current(),
             ];
-            $this->cacheSize++;
             $this->iterable->next();
         }
 
@@ -213,7 +216,6 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
 
     private function markAsTraversed(): void
     {
-        $this->traversed = true;
         $this->iterable = null;
     }
 }
