@@ -26,13 +26,18 @@ it('moves to explicit character positions and rejects out-of-range positions', f
         ->and(fn() => $iterator->moveTo(4))->toThrow(OutOfRangeException::class);
 });
 
-it('moves one character by default and clamps at string boundaries', function (): void {
+it('moves one character by default, allows zero steps, and clamps at string boundaries', function (): void {
     $iterator = new StringIterator('abcd');
 
     expect($iterator->forward())->toBe($iterator)
-        ->and($iterator->current())->toBe('b')
-        ->and($iterator->backward())->toBe($iterator)
-        ->and($iterator->current())->toBe('a');
+        ->and($iterator->current())->toBe('b');
+
+    $iterator->moveTo(3);
+
+    expect($iterator->backward())->toBe($iterator)
+        ->and($iterator->current())->toBe('c')
+        ->and($iterator->backward(0))->toBe($iterator)
+        ->and($iterator->current())->toBe('c');
 
     $iterator->forward(10);
     expect($iterator->current())->toBe('d')
