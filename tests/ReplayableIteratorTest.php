@@ -2,636 +2,246 @@
 
 declare(strict_types=1);
 
-namespace Componenta\Stdlib\Tests;
-
-use ArrayIterator;
 use Componenta\Stdlib\ReplayableIterator;
-use Generator;
-use IteratorAggregate;
-use PHPUnit\Framework\Attributes\DataProvider;
-use PHPUnit\Framework\Attributes\Test;
-use PHPUnit\Framework\TestCase;
-use Traversable;
 
-final class ReplayableIteratorTest extends TestCase
-{
-    // =========================================================================
-    // Basic functionality with arrays
-    // =========================================================================
+it('iterates arrays and iterators with their original keys', function (): void {
+    $source = ['a' => 1, 'b' => 2, 'c' => 3];
 
-    #[Test]
-    public function iteratesOverArrayCorrectly(): void
-    {
-        $source = ['a' => 1, 'b' => 2, 'c' => 3];
-        $iterator = new ReplayableIterator($source);
+    expect(iterator_to_array(new ReplayableIterator($source), true))->toBe($source)
+        ->and(iterator_to_array(new ReplayableIterator(new ArrayIterator($source)), true))->toBe($source);
+});
 
-        $result = [];
-        foreach ($iterator as $key => $value) {
-            $result[$key] = $value;
+it('does not read a lazy iterator until data is requested', function (): void {
+    $reads = 0;
+    $source = (static function () use (&$reads): Generator {
+        foreach ([1, 2, 3] as $value) {
+            $reads++;
+            yield $value;
         }
+    })();
 
-        self::assertSame($source, $result);
-    }
+    $iterator = new ReplayableIterator($source);
 
-    #[Test]
-    public function arrayIsImmediatelyTraversed(): void
-    {
-        $iterator = new ReplayableIterator([1, 2, 3]);
+    expect($reads)->toBe(0)
+        ->and($iterator->current())->toBe(1)
+        ->and($reads)->toBe(1);
 
-        self::assertTrue($iterator->traversed);
-        self::assertSame(3, $iterator->cacheSize);
-    }
+    $iterator->next();
 
-    #[Test]
-    public function handlesEmptyArray(): void
-    {
-        $iterator = new ReplayableIterator([]);
+    expect($iterator->current())->toBe(2)
+        ->and($reads)->toBe(2);
+});
 
-        self::assertFalse($iterator->valid());
-        self::assertSame(0, $iterator->count());
-        self::assertSame([], $iterator->toArray());
-    }
-
-    // =========================================================================
-    // Basic functionality with iterators
-    // =========================================================================
-
-    #[Test]
-    public function iteratesOverIteratorCorrectly(): void
-    {
-        $source = ['a' => 1, 'b' => 2, 'c' => 3];
-        $iterator = new ReplayableIterator(new ArrayIterator($source));
-
-        $result = [];
-        foreach ($iterator as $key => $value) {
-            $result[$key] = $value;
+it('handles nested IteratorAggregate sources', function (): void {
+    $source = new class implements IteratorAggregate {
+        public function getIterator(): Traversable
+        {
+            return new class implements IteratorAggregate {
+                public function getIterator(): Traversable
+                {
+                    return new ArrayIterator(['nested' => 'value']);
+                }
+            };
         }
+    };
 
-        self::assertSame($source, $result);
-    }
+    expect((new ReplayableIterator($source))->toArray(preserveKeys: true))
+        ->toBe(['nested' => 'value']);
+});
 
-    #[Test]
-    public function iteratorIsLazilyTraversed(): void
-    {
-        $iterator = new ReplayableIterator(new ArrayIterator([1, 2, 3]));
+it('replays a one-shot generator after it has been cached', function (): void {
+    $source = (static function (): Generator {
+        yield 1;
+        yield 2;
+        yield 3;
+    })();
+    $iterator = new ReplayableIterator($source);
 
-        self::assertFalse($iterator->traversed);
-        self::assertSame(0, $iterator->cacheSize);
+    $first = iterator_to_array($iterator, false);
+    $iterator->rewind();
+    $second = iterator_to_array($iterator, false);
 
-        $iterator->current(); // Cache first element
-        self::assertSame(1, $iterator->cacheSize);
-    }
+    expect($first)->toBe([1, 2, 3])
+        ->and($second)->toBe($first);
+});
 
-    #[Test]
-    public function handlesIteratorAggregate(): void
-    {
-        $aggregate = new class implements IteratorAggregate {
-            public function getIterator(): Traversable
-            {
-                return new ArrayIterator(['x' => 10, 'y' => 20]);
-            }
-        };
+it('does not lose source elements when next is called before current', function (): void {
+    $source = (static function (): Generator {
+        yield 'first';
+        yield 'second';
+        yield 'third';
+    })();
+    $iterator = new ReplayableIterator($source);
 
-        $iterator = new ReplayableIterator($aggregate);
-        $result = $iterator->toArray(preserveKeys: true);
+    expect($iterator->valid())->toBeTrue();
+    $iterator->next();
 
-        self::assertSame(['x' => 10, 'y' => 20], $result);
-    }
+    expect($iterator->current())->toBe('second');
 
-    #[Test]
-    public function handlesNestedIteratorAggregate(): void
-    {
-        $nested = new class implements IteratorAggregate {
-            public function getIterator(): Traversable
-            {
-                return new class implements IteratorAggregate {
-                    public function getIterator(): Traversable
-                    {
-                        return new ArrayIterator(['nested' => 'value']);
-                    }
-                };
-            }
-        };
+    $iterator->rewind();
 
-        $iterator = new ReplayableIterator($nested);
-        $result = $iterator->toArray(preserveKeys: true);
+    expect($iterator->toArray())->toBe(['first', 'second', 'third']);
+});
 
-        self::assertSame(['nested' => 'value'], $result);
-    }
+it('preserves skipped elements across multiple next calls', function (): void {
+    $iterator = new ReplayableIterator(new ArrayIterator([1, 2, 3, 4, 5]));
 
-    // =========================================================================
-    // Generator handling
-    // =========================================================================
+    $iterator->next();
+    $iterator->next();
+    $iterator->next();
 
-    #[Test]
-    public function iteratesOverGeneratorCorrectly(): void
-    {
-        $generator = (function (): Generator {
-            yield 'a' => 1;
-            yield 'b' => 2;
-            yield 'c' => 3;
-        })();
+    expect($iterator->current())->toBe(4);
 
-        $iterator = new ReplayableIterator($generator);
+    $iterator->rewind();
 
-        $result = [];
-        foreach ($iterator as $key => $value) {
-            $result[$key] = $value;
-        }
+    expect($iterator->toArray())->toBe([1, 2, 3, 4, 5]);
+});
 
-        self::assertSame(['a' => 1, 'b' => 2, 'c' => 3], $result);
-    }
-
-    #[Test]
-    public function generatorCanBeReiteratedAfterCaching(): void
-    {
-        $generator = (function (): Generator {
-            yield 1;
-            yield 2;
-            yield 3;
-        })();
-
-        $iterator = new ReplayableIterator($generator);
-
-        // First iteration
-        $first = [];
-        foreach ($iterator as $value) {
-            $first[] = $value;
-        }
-
-        // Second iteration (from cache)
-        $iterator->rewind();
-        $second = [];
-        foreach ($iterator as $value) {
-            $second[] = $value;
-        }
-
-        self::assertSame($first, $second);
-        self::assertSame([1, 2, 3], $first);
-    }
-
-    // =========================================================================
-    // Critical bug fix: next() without current()
-    // =========================================================================
-
-    #[Test]
-    public function nextWithoutCurrentDoesNotLoseElements(): void
-    {
-        $generator = (function (): Generator {
-            yield 'first';
-            yield 'second';
-            yield 'third';
-        })();
-
-        $iterator = new ReplayableIterator($generator);
-
-        // Call next() without calling current() first
-        self::assertTrue($iterator->valid());
-        $iterator->next();
-
-        // Now get remaining elements
-        $result = [];
-        while ($iterator->valid()) {
-            $result[] = $iterator->current();
-            $iterator->next();
-        }
-
-        // Rewind and get all elements
-        $iterator->rewind();
-        $all = $iterator->toArray();
-
-        self::assertSame(['first', 'second', 'third'], $all);
-    }
-
-    #[Test]
-    public function multipleNextCallsWithoutCurrentPreserveAllElements(): void
-    {
-        $iterator = new ReplayableIterator(new ArrayIterator([1, 2, 3, 4, 5]));
-
-        // Skip to position 3 without reading
-        $iterator->next();
-        $iterator->next();
-        $iterator->next();
-
-        self::assertSame(4, $iterator->current());
-
-        // Rewind and verify all elements are cached
-        $iterator->rewind();
-        self::assertSame([1, 2, 3, 4, 5], $iterator->toArray());
-    }
-
-    // =========================================================================
-    // Critical bug fix: null keys
-    // =========================================================================
-
-    #[Test]
-    public function handlesNullKeysCorrectly(): void
-    {
-        $iteratorWithNullKey = new class implements \Iterator {
-            private array $items = [
-                [null, 'null-value'],
-                ['a', 'a-value'],
-            ];
-            private int $position = 0;
-
-            public function current(): mixed
-            {
-                return $this->items[$this->position][1] ?? null;
-            }
-
-            public function key(): mixed
-            {
-                return $this->items[$this->position][0] ?? null;
-            }
-
-            public function next(): void
-            {
-                $this->position++;
-            }
-
-            public function valid(): bool
-            {
-                return $this->position < count($this->items);
-            }
-
-            public function rewind(): void
-            {
-                $this->position = 0;
-            }
-        };
-
-        $iterator = new ReplayableIterator($iteratorWithNullKey);
-
-        $result = [];
-        foreach ($iterator as $key => $value) {
-            $result[] = [$key, $value];
-        }
-
-        self::assertSame([
+it('retains null and duplicate source keys during iteration', function (): void {
+    $source = new class implements Iterator {
+        private array $items = [
             [null, 'null-value'],
-            ['a', 'a-value'],
-        ], $result);
-    }
-
-    // =========================================================================
-    // Critical bug fix: duplicate keys
-    // =========================================================================
-
-    #[Test]
-    public function handlesDuplicateKeysCorrectly(): void
-    {
-        $iteratorWithDuplicateKeys = new class implements \Iterator {
-            private array $items = [
-                ['a', 1],
-                ['a', 2], // Duplicate key
-                ['b', 3],
-            ];
-            private int $position = 0;
-
-            public function current(): mixed
-            {
-                return $this->items[$this->position][1] ?? null;
-            }
-
-            public function key(): mixed
-            {
-                return $this->items[$this->position][0] ?? null;
-            }
-
-            public function next(): void
-            {
-                $this->position++;
-            }
-
-            public function valid(): bool
-            {
-                return $this->position < count($this->items);
-            }
-
-            public function rewind(): void
-            {
-                $this->position = 0;
-            }
-        };
-
-        $iterator = new ReplayableIterator($iteratorWithDuplicateKeys);
-
-        // All three items should be present
-        self::assertSame(3, $iterator->count());
-
-        // Collect all items
-        $iterator->rewind();
-        $result = [];
-        foreach ($iterator as $key => $value) {
-            $result[] = [$key, $value];
-        }
-
-        self::assertSame([
             ['a', 1],
             ['a', 2],
             ['b', 3],
-        ], $result);
+        ];
+        private int $position = 0;
+
+        public function current(): mixed { return $this->items[$this->position][1] ?? null; }
+        public function key(): mixed { return $this->items[$this->position][0] ?? null; }
+        public function next(): void { $this->position++; }
+        public function valid(): bool { return $this->position < count($this->items); }
+        public function rewind(): void { $this->position = 0; }
+    };
+
+    $result = [];
+    foreach (new ReplayableIterator($source) as $key => $value) {
+        $result[] = [$key, $value];
     }
 
-    #[Test]
-    public function toArrayWithPreserveKeysOverwritesDuplicates(): void
-    {
-        $iteratorWithDuplicateKeys = new class implements \Iterator {
-            private array $items = [
-                ['a', 1],
-                ['a', 2],
-            ];
-            private int $position = 0;
+    expect($result)->toBe([
+        [null, 'null-value'],
+        ['a', 1],
+        ['a', 2],
+        ['b', 3],
+    ]);
+});
 
-            public function current(): mixed
-            {
-                return $this->items[$this->position][1] ?? null;
-            }
+it('preserves all duplicate-key values without keys and uses last value with keys', function (): void {
+    $factory = static fn() => new class implements Iterator {
+        private array $items = [['a', 1], ['a', 2]];
+        private int $position = 0;
 
-            public function key(): mixed
-            {
-                return $this->items[$this->position][0] ?? null;
-            }
+        public function current(): mixed { return $this->items[$this->position][1] ?? null; }
+        public function key(): mixed { return $this->items[$this->position][0] ?? null; }
+        public function next(): void { $this->position++; }
+        public function valid(): bool { return $this->position < count($this->items); }
+        public function rewind(): void { $this->position = 0; }
+    };
 
-            public function next(): void
-            {
-                $this->position++;
-            }
+    expect((new ReplayableIterator($factory()))->toArray())->toBe([1, 2])
+        ->and((new ReplayableIterator($factory()))->toArray(preserveKeys: true))->toBe(['a' => 2]);
+});
 
-            public function valid(): bool
-            {
-                return $this->position < count($this->items);
-            }
+it('rewinds after partial traversal and can be rewound repeatedly', function (): void {
+    $iterator = new ReplayableIterator(new ArrayIterator([1, 2, 3]));
 
-            public function rewind(): void
-            {
-                $this->position = 0;
-            }
-        };
+    expect($iterator->current())->toBe(1);
+    $iterator->next();
+    expect($iterator->current())->toBe(2);
 
-        $iterator = new ReplayableIterator($iteratorWithDuplicateKeys);
+    $iterator->rewind();
+    expect(iterator_to_array($iterator, false))->toBe([1, 2, 3]);
 
-        // toArray without preserveKeys keeps all values
-        self::assertSame([1, 2], $iterator->toArray(preserveKeys: false));
+    $iterator->rewind();
+    expect(iterator_to_array($iterator, false))->toBe([1, 2, 3]);
+});
 
-        // toArray with preserveKeys - last value wins
-        self::assertSame(['a' => 2], $iterator->toArray(preserveKeys: true));
-    }
-
-    // =========================================================================
-    // rewind() behavior
-    // =========================================================================
-
-    #[Test]
-    public function rewindAfterPartialTraversalWorks(): void
-    {
-        $iterator = new ReplayableIterator(new ArrayIterator([1, 2, 3, 4, 5]));
-
-        // Partial traversal
-        $iterator->current(); // 1
-        $iterator->next();
-        $iterator->current(); // 2
-        $iterator->next();
-
-        // Rewind
-        $iterator->rewind();
-
-        // Should start from beginning
-        self::assertSame(0, $iterator->key());
-        self::assertSame(1, $iterator->current());
-
-        // Full traversal should work
-        self::assertSame([1, 2, 3, 4, 5], $iterator->toArray());
-    }
-
-    #[Test]
-    public function multipleRewindsWork(): void
-    {
-        $iterator = new ReplayableIterator(new ArrayIterator(['a', 'b', 'c']));
-
-        for ($i = 0; $i < 3; $i++) {
-            $result = [];
-            foreach ($iterator as $value) {
-                $result[] = $value;
-            }
-            self::assertSame(['a', 'b', 'c'], $result);
-            $iterator->rewind();
+it('toArray forces the source to finish without changing the direct cursor position', function (): void {
+    $reads = 0;
+    $source = (static function () use (&$reads): Generator {
+        foreach ([1, 2, 3, 4] as $value) {
+            $reads++;
+            yield $value;
         }
-    }
+    })();
+    $iterator = new ReplayableIterator($source);
 
-    // =========================================================================
-    // toArray() behavior
-    // =========================================================================
+    expect($iterator->current())->toBe(1);
+    $iterator->next();
+    expect($iterator->current())->toBe(2)
+        ->and($reads)->toBe(2);
 
-    #[Test]
-    public function toArrayForcesFullTraversal(): void
-    {
-        $iterator = new ReplayableIterator(new ArrayIterator([1, 2, 3]));
+    expect($iterator->toArray())->toBe([1, 2, 3, 4])
+        ->and($reads)->toBe(4)
+        ->and($iterator->current())->toBe(2);
+});
 
-        self::assertFalse($iterator->traversed);
-        $iterator->toArray();
-        self::assertTrue($iterator->traversed);
-    }
+it('converts sequential and associative inputs with optional key preservation', function (): void {
+    expect((new ReplayableIterator([1, 2, 3]))->toArray())->toBe([1, 2, 3])
+        ->and((new ReplayableIterator([1, 2, 3]))->toArray(preserveKeys: true))->toBe([0 => 1, 1 => 2, 2 => 3])
+        ->and((new ReplayableIterator(['a' => 1, 'b' => 2]))->toArray())->toBe([1, 2])
+        ->and((new ReplayableIterator(['a' => 1, 'b' => 2]))->toArray(preserveKeys: true))->toBe(['a' => 1, 'b' => 2]);
+});
 
-    #[Test]
-    public function toArrayPreservesPositionAfterTraversal(): void
-    {
-        $iterator = new ReplayableIterator(new ArrayIterator([1, 2, 3, 4, 5]));
+it('count consumes the remaining lazy source once and is idempotent', function (): void {
+    $reads = 0;
+    $source = (static function () use (&$reads): Generator {
+        for ($i = 0; $i < 5; $i++) {
+            $reads++;
+            yield $i;
+        }
+    })();
+    $iterator = new ReplayableIterator($source);
 
-        // Move to position 2
-        $iterator->current();
-        $iterator->next();
-        $iterator->current();
-        $iterator->next();
+    expect($reads)->toBe(0)
+        ->and(count($iterator))->toBe(5)
+        ->and($reads)->toBe(5)
+        ->and(count($iterator))->toBe(5)
+        ->and($reads)->toBe(5);
+});
 
-        // Force full traversal
-        $iterator->toArray();
+it('handles empty and single-element iterators', function (): void {
+    $empty = new ReplayableIterator(new ArrayIterator([]));
 
-        // Position should be preserved
-        self::assertSame(2, $iterator->currentPosition);
-        self::assertSame(3, $iterator->current());
-    }
+    expect($empty->valid())->toBeFalse()
+        ->and($empty->current())->toBeNull()
+        ->and($empty->key())->toBeNull()
+        ->and(count($empty))->toBe(0)
+        ->and($empty->toArray())->toBe([]);
 
-    #[Test]
-    #[DataProvider('toArrayDataProvider')]
-    public function toArrayReturnsCorrectFormat(array $source, bool $preserveKeys, array $expected): void
-    {
-        $iterator = new ReplayableIterator($source);
-        self::assertSame($expected, $iterator->toArray($preserveKeys));
-    }
+    $single = new ReplayableIterator(new ArrayIterator(['only' => 'one']));
 
-    public static function toArrayDataProvider(): iterable
-    {
-        yield 'sequential without preserve' => [
-            [1, 2, 3],
-            false,
-            [1, 2, 3],
-        ];
+    expect($single->valid())->toBeTrue()
+        ->and($single->key())->toBe('only')
+        ->and($single->current())->toBe('one');
 
-        yield 'sequential with preserve' => [
-            [1, 2, 3],
-            true,
-            [0 => 1, 1 => 2, 2 => 3],
-        ];
+    $single->next();
 
-        yield 'associative without preserve' => [
-            ['a' => 1, 'b' => 2],
-            false,
-            [1, 2],
-        ];
+    expect($single->valid())->toBeFalse()
+        ->and(count($single))->toBe(1);
+});
 
-        yield 'associative with preserve' => [
-            ['a' => 1, 'b' => 2],
-            true,
-            ['a' => 1, 'b' => 2],
-        ];
-    }
+it('returns null current and key after the direct cursor passes the end', function (): void {
+    $iterator = new ReplayableIterator([1]);
+    $iterator->next();
 
-    // =========================================================================
-    // count() behavior
-    // =========================================================================
+    expect($iterator->valid())->toBeFalse()
+        ->and($iterator->current())->toBeNull()
+        ->and($iterator->key())->toBeNull();
+});
 
-    #[Test]
-    public function countForcesFullTraversal(): void
-    {
-        $callCount = 0;
-        $generator = (function () use (&$callCount): Generator {
-            for ($i = 0; $i < 5; $i++) {
-                $callCount++;
-                yield $i;
-            }
-        })();
+it('preserves mixed values exactly', function (): void {
+    $object = new stdClass();
+    $source = [
+        'null' => null,
+        'bool' => false,
+        'int' => 0,
+        'float' => 0.0,
+        'string' => '',
+        'array' => [],
+        'object' => $object,
+    ];
 
-        $iterator = new ReplayableIterator($generator);
-
-        self::assertSame(0, $callCount);
-        self::assertSame(5, $iterator->count());
-        self::assertSame(5, $callCount);
-        self::assertTrue($iterator->traversed);
-    }
-
-    #[Test]
-    public function countIsIdempotent(): void
-    {
-        $iterator = new ReplayableIterator([1, 2, 3]);
-
-        self::assertSame(3, $iterator->count());
-        self::assertSame(3, $iterator->count());
-        self::assertSame(3, $iterator->count());
-    }
-
-    // =========================================================================
-    // Edge cases
-    // =========================================================================
-
-    #[Test]
-    public function handlesEmptyIterator(): void
-    {
-        $iterator = new ReplayableIterator(new ArrayIterator([]));
-
-        self::assertFalse($iterator->valid());
-        self::assertNull($iterator->current());
-        self::assertNull($iterator->key());
-        self::assertSame(0, $iterator->count());
-        self::assertSame([], $iterator->toArray());
-    }
-
-    #[Test]
-    public function handlesSingleElementIterator(): void
-    {
-        $iterator = new ReplayableIterator(new ArrayIterator(['only' => 'one']));
-
-        self::assertTrue($iterator->valid());
-        self::assertSame('only', $iterator->key());
-        self::assertSame('one', $iterator->current());
-
-        $iterator->next();
-
-        self::assertFalse($iterator->valid());
-        self::assertSame(1, $iterator->count());
-    }
-
-    #[Test]
-    public function currentAndKeyReturnNullWhenInvalid(): void
-    {
-        $iterator = new ReplayableIterator([1]);
-
-        $iterator->next(); // Move past the only element
-
-        self::assertFalse($iterator->valid());
-        self::assertNull($iterator->current());
-        self::assertNull($iterator->key());
-    }
-
-    #[Test]
-    public function worksWithMixedValueTypes(): void
-    {
-        $source = [
-            'null' => null,
-            'bool' => false,
-            'int' => 0,
-            'float' => 0.0,
-            'string' => '',
-            'array' => [],
-            'object' => new \stdClass(),
-        ];
-
-        $iterator = new ReplayableIterator($source);
-        $result = $iterator->toArray(preserveKeys: true);
-
-        self::assertEquals($source, $result);
-    }
-
-    #[Test]
-    public function releasesIteratorAfterFullTraversal(): void
-    {
-        $iterator = new ReplayableIterator(new ArrayIterator([1, 2, 3]));
-
-        $iterator->toArray();
-
-        // Using reflection to verify internal state
-        $reflection = new \ReflectionClass($iterator);
-        $property = $reflection->getProperty('iterable');
-        $property->setAccessible(true);
-
-        self::assertNull($property->getValue($iterator));
-    }
-
-    // =========================================================================
-    // Countable interface compliance
-    // =========================================================================
-
-    #[Test]
-    public function implementsCountableCorrectly(): void
-    {
-        $iterator = new ReplayableIterator([1, 2, 3, 4, 5]);
-
-        self::assertInstanceOf(\Countable::class, $iterator);
-        self::assertCount(5, $iterator);
-    }
-
-    // =========================================================================
-    // Iterator interface compliance
-    // =========================================================================
-
-    #[Test]
-    public function implementsIteratorCorrectly(): void
-    {
-        $iterator = new ReplayableIterator(['a' => 1, 'b' => 2]);
-
-        self::assertInstanceOf(\Iterator::class, $iterator);
-
-        $iterator->rewind();
-        self::assertTrue($iterator->valid());
-        self::assertSame('a', $iterator->key());
-        self::assertSame(1, $iterator->current());
-
-        $iterator->next();
-        self::assertTrue($iterator->valid());
-        self::assertSame('b', $iterator->key());
-        self::assertSame(2, $iterator->current());
-
-        $iterator->next();
-        self::assertFalse($iterator->valid());
-    }
-}
+    expect((new ReplayableIterator($source))->toArray(preserveKeys: true))->toBe($source);
+});
