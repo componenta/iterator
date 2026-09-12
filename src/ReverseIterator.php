@@ -67,8 +67,7 @@ final class ReverseIterator implements \Iterator, Arrayable
      */
     public function valid(): bool
     {
-        $key = key($this->data);
-        return $key !== null;
+        return key($this->data) !== null;
     }
 
     /**
@@ -77,7 +76,9 @@ final class ReverseIterator implements \Iterator, Arrayable
     public function rewind(): void
     {
         if ($this->iterable !== null) {
-            $this->data = to_array($this->iterable);
+            $this->data = is_array($this->iterable)
+                ? $this->iterable
+                : iterator_to_array($this->iterable);
             $this->iterable = null;
         }
 
