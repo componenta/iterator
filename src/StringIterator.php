@@ -163,7 +163,7 @@ final class StringIterator implements \Iterator, \Stringable, \Countable
             throw new InvalidArgumentException('Forward steps must be non-negative');
         }
 
-        if ($this->length === 0) {
+        if ($this->position >= $this->length) {
             return $this;
         }
 
