@@ -28,7 +28,9 @@ final class ArrayListReverseIterator implements Iterator
 
     public function current(): mixed
     {
-        return $this->items[$this->currentIndex];
+        return $this->valid()
+            ? $this->items[$this->currentIndex]
+            : null;
     }
 
     public function next(): void

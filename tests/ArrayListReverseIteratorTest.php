@@ -46,3 +46,11 @@ it('exposes standard Iterator state while traversing backward', function (): voi
 
     expect($iterator->valid())->toBeFalse();
 });
+
+it('returns null from current after traversal has finished', function (): void {
+    $iterator = new ArrayListReverseIterator(['only']);
+    $iterator->next();
+
+    expect($iterator->valid())->toBeFalse()
+        ->and($iterator->current())->toBeNull();
+});
