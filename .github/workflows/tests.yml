@@ -37,3 +37,9 @@ jobs:
 
       - name: Run Pest
         run: composer test
+
+      - name: Run Pest in deterministic random order
+        run: ./vendor/bin/pest --order-by=random --random-order-seed=20260912
+
+      - name: Run Pest in reverse order
+        run: ./vendor/bin/pest --reverse-order
