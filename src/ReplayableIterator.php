@@ -9,6 +9,9 @@ use Countable;
 use Generator;
 use Iterator;
 use IteratorAggregate;
+use IteratorIterator;
+use Throwable;
+use Traversable;
 
 /**
  * Iterator wrapper that caches traversed elements for replay.
@@ -16,25 +19,32 @@ use IteratorAggregate;
  * Direct Iterator methods retain their traditional single-cursor behavior.
  * Use cursor() whenever independent or interleaved traversal is required.
  * All cursors share the same lazy cache while keeping their positions local.
+ *
+ * @template TKey
+ * @template TValue
+ * @implements Iterator<TKey, TValue>
  */
 final class ReplayableIterator implements Iterator, Countable, Arrayable
 {
-    /** @var list<array{mixed, mixed}> */
+    /** @var list<array{TKey, TValue}> */
     private array $cache = [];
 
+    /** @var non-negative-int */
     public int $cacheSize {
         get => count($this->cache);
     }
 
     public bool $traversed {
-        get => $this->iterable === null;
+        get => $this->iterable === null && $this->failure === null;
     }
 
     private(set) int $currentPosition;
 
+    /** @var Iterator<TKey, TValue>|null */
     private ?Iterator $iterable = null;
+    private ?Throwable $failure = null;
 
-    /** @param iterable<mixed, mixed> $iterable */
+    /** @param iterable<TKey, TValue> $iterable */
     public function __construct(iterable $iterable)
     {
         $this->currentPosition = 0;
@@ -50,7 +60,7 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
      * Multiple cursors may be consumed in any interleaving order. They share
      * cached source entries but never share a cursor position.
      *
-     * @return Generator<mixed, mixed>
+     * @return Generator<TKey, TValue>
      */
     public function cursor(): Generator
     {
@@ -63,6 +73,12 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
         }
     }
 
+    /** @return Generator<TKey, TValue> */
+    public function replay(): Generator
+    {
+        return $this->cursor();
+    }
+
     public function count(): int
     {
         $this->traverseFully();
@@ -70,6 +86,7 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
         return $this->cacheSize;
     }
 
+    /** @return TValue|null */
     public function current(): mixed
     {
         if (!$this->ensureCached($this->currentPosition)) {
@@ -79,6 +96,7 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
         return $this->cache[$this->currentPosition][1];
     }
 
+    /** @return TKey|null */
     public function key(): mixed
     {
         if (!$this->ensureCached($this->currentPosition)) {
@@ -90,7 +108,9 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
 
     public function next(): void
     {
+        $this->assertHealthy();
         $this->currentPosition++;
+        $this->ensureCached($this->currentPosition);
     }
 
     public function valid(): bool
@@ -100,12 +120,13 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
 
     public function rewind(): void
     {
+        $this->assertHealthy();
         $this->currentPosition = 0;
     }
 
     /**
      * @param bool $preserveKeys With duplicate keys, later values overwrite earlier ones.
-     * @return array<mixed, mixed>|list<mixed>
+     * @return array<array-key, TValue>
      */
     public function toArray(bool $preserveKeys = false): array
     {
@@ -124,7 +145,7 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
         return $result;
     }
 
-    /** @param array<mixed, mixed> $array */
+    /** @param array<TKey, TValue> $array */
     private function initializeFromArray(array $array): void
     {
         foreach ($array as $key => $value) {
@@ -132,8 +153,8 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
         }
     }
 
-    /** @param Iterator|IteratorAggregate $iterable */
-    private function initializeFromIterator(Iterator|IteratorAggregate $iterable): void
+    /** @param Traversable<TKey, TValue> $iterable */
+    private function initializeFromIterator(Traversable $iterable): void
     {
         $iterator = $this->unwrapIterator($iterable);
         $this->iterable = $iterator;
@@ -143,7 +164,11 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
         }
     }
 
-    private function unwrapIterator(Iterator|IteratorAggregate $iterable): Iterator
+    /**
+     * @param Traversable<TKey, TValue> $iterable
+     * @return Iterator<TKey, TValue>
+     */
+    private function unwrapIterator(Traversable $iterable): Iterator
     {
         $seen = new \SplObjectStorage();
 
@@ -156,7 +181,7 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
             $iterable = $iterable->getIterator();
         }
 
-        return $iterable;
+        return $iterable instanceof Iterator ? $iterable : new IteratorIterator($iterable);
     }
 
     /**
@@ -165,6 +190,8 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
      */
     private function ensureCached(int $position): bool
     {
+        $this->assertHealthy();
+
         if ($position < $this->cacheSize) {
             return true;
         }
@@ -173,21 +200,26 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
             return false;
         }
 
-        while ($position >= $this->cacheSize) {
-            if ($this->cacheSize > 0) {
-                $this->iterable->next();
+        try {
+            while ($position >= $this->cacheSize) {
+                if ($this->cacheSize > 0) {
+                    $this->iterable->next();
+                }
+
+                if (!$this->iterable->valid()) {
+                    $this->iterable = null;
+                    return false;
+                }
+
+                $this->cache[] = [
+                    $this->iterable->key(),
+                    $this->iterable->current(),
+                ];
             }
-
-            if (!$this->iterable->valid()) {
-                $this->markAsTraversed();
-
-                return false;
-            }
-
-            $this->cache[] = [
-                $this->iterable->key(),
-                $this->iterable->current(),
-            ];
+        } catch (Throwable $failure) {
+            $this->failure = $failure;
+            $this->iterable = null;
+            throw $failure;
         }
 
         return true;
@@ -195,27 +227,14 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
 
     private function traverseFully(): void
     {
-        if ($this->iterable === null) {
-            return;
+        while ($this->ensureCached($this->cacheSize)) {
         }
-
-        if ($this->cacheSize > 0) {
-            $this->iterable->next();
-        }
-
-        while ($this->iterable->valid()) {
-            $this->cache[] = [
-                $this->iterable->key(),
-                $this->iterable->current(),
-            ];
-            $this->iterable->next();
-        }
-
-        $this->markAsTraversed();
     }
 
-    private function markAsTraversed(): void
+    private function assertHealthy(): void
     {
-        $this->iterable = null;
+        if ($this->failure !== null) {
+            throw $this->failure;
+        }
     }
 }

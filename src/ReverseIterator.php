@@ -8,6 +8,8 @@ use Componenta\Arrayable\Arrayable;
 
 /**
  * Iterator that traverses an iterable in reverse order.
+ *
+ * @implements \Iterator<mixed, mixed>
  */
 final class ReverseIterator implements \Iterator, Arrayable
 {
@@ -16,13 +18,13 @@ final class ReverseIterator implements \Iterator, Arrayable
     /** @var list<array{mixed, mixed}> */
     private array $entries = [];
 
-    /** @var iterable|null Original iterable (consumed on first rewind). */
+    /** @var iterable<mixed, mixed>|null Original iterable (consumed on first rewind). */
     private ?iterable $iterable;
 
     private int $position = -1;
 
     /**
-     * @param iterable $iterable The iterable to reverse.
+     * @param iterable<mixed, mixed> $iterable The iterable to reverse.
      */
     public function __construct(iterable $iterable)
     {
@@ -32,7 +34,7 @@ final class ReverseIterator implements \Iterator, Arrayable
     /**
      * Creates a new instance with a different iterable.
      *
-     * @param iterable $iterable The new iterable.
+     * @param iterable<mixed, mixed> $iterable The new iterable.
      * @return self
      */
     public function withIterable(iterable $iterable): self
@@ -82,10 +84,12 @@ final class ReverseIterator implements \Iterator, Arrayable
     public function rewind(): void
     {
         if ($this->iterable !== null) {
+            $entries = [];
             foreach ($this->iterable as $key => $value) {
-                $this->entries[] = [$key, $value];
+                $entries[] = [$key, $value];
             }
 
+            $this->entries = $entries;
             $this->iterable = null;
         }
 

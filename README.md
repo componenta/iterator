@@ -42,7 +42,11 @@ $first->next();
 // $second still points at its own first entry.
 ```
 
-Every cursor has a local position and shares only the lazy replay cache. Duplicate and `null` source keys are retained internally. Calling `count()` or `toArray()` forces full traversal of the wrapped source.
+`replay()` is an alias for `cursor()` and returns a new independent cursor.
+If the source throws, subsequent reads and advancing existing cursors rethrow that
+same exception; a failed source cannot become a successful truncated result.
+
+Every cursor has a local position and shares only the lazy replay cache. Duplicate and `null` source keys are retained internally. Calling `count()` or `toArray()` forces full traversal of the wrapped source without moving the manual cursor.
 
 ## Reverse Iteration
 
@@ -52,7 +56,7 @@ Every cursor has a local position and shares only the lazy replay cache. Duplica
 
 ## StringIterator
 
-`StringIterator` iterates over a string with encoding support and cursor helpers:
+`StringIterator` requires the PHP `mbstring` extension and iterates over a string with encoding support and cursor helpers:
 
 - `moveTo()`
 - `forward()`
@@ -77,3 +81,10 @@ CI validates Composer metadata, lints PHP files, and runs Pest on PHP 8.4 and 8.
 ## Memory Notes
 
 Replayable and reverse iterators trade memory for traversal behavior. They are appropriate for finite sequences. For large PSR-7 streams, use `componenta/stream-iterator`, which keeps only the current chunk.
+
+
+`StringIterator::forward()` accepts non-negative steps and can advance to the end
+position, where `isEnd()` is true and `current()` is null. A zero step preserves
+the position; a step beyond the remaining length stops at the end. Calling
+`backward()` from the end returns to the final character. Negative movement steps
+throw `InvalidArgumentException`.

@@ -151,7 +151,7 @@ final class StringIterator implements \Iterator, \Stringable, \Countable
     /**
      * Moves forward by a number of characters.
      *
-     * Stops at the last character of the string.
+     * Stops just past the last character, where isEnd() is true.
      *
      * @param int $steps Number of characters to move forward.
      * @return $this
@@ -167,7 +167,7 @@ final class StringIterator implements \Iterator, \Stringable, \Countable
             return $this;
         }
 
-        $this->position = min($this->position + $steps, $this->length - 1);
+        $this->position = min($this->position + $steps, $this->length);
 
         return $this;
     }

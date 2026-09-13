@@ -40,11 +40,12 @@ it('moves one character by default, allows zero steps, and clamps at string boun
         ->and($iterator->current())->toBe('c');
 
     $iterator->forward(10);
-    expect($iterator->current())->toBe('d')
-        ->and($iterator->isEnd())->toBeFalse();
+    expect($iterator->current())->toBeNull()
+        ->and($iterator->key())->toBe(4)
+        ->and($iterator->isEnd())->toBeTrue();
 
     $iterator->backward(2);
-    expect($iterator->current())->toBe('b')
+    expect($iterator->current())->toBe('c')
         ->and($iterator->isStart())->toBeFalse();
 
     $iterator->backward(10);
