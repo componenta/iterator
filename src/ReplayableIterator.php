@@ -10,6 +10,7 @@ use Generator;
 use Iterator;
 use IteratorAggregate;
 use IteratorIterator;
+use LogicException;
 use Throwable;
 use Traversable;
 
@@ -43,6 +44,7 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
     /** @var Iterator<TKey, TValue>|null */
     private ?Iterator $iterable = null;
     private ?Throwable $failure = null;
+    private bool $reading = false;
 
     /** @param iterable<TKey, TValue> $iterable */
     public function __construct(iterable $iterable)
@@ -109,8 +111,9 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
     public function next(): void
     {
         $this->assertHealthy();
-        $this->currentPosition++;
-        $this->ensureCached($this->currentPosition);
+        $position = $this->currentPosition + 1;
+        $this->ensureCached($position);
+        $this->currentPosition = $position;
     }
 
     public function valid(): bool
@@ -200,6 +203,11 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
             return false;
         }
 
+        if ($this->reading) {
+            throw new LogicException('Source read is already in progress.');
+        }
+
+        $this->reading = true;
         try {
             while ($position >= $this->cacheSize) {
                 if ($this->cacheSize > 0) {
@@ -220,6 +228,8 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
             $this->failure = $failure;
             $this->iterable = null;
             throw $failure;
+        } finally {
+            $this->reading = false;
         }
 
         return true;

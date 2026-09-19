@@ -46,6 +46,12 @@ $first->next();
 If the source throws, subsequent reads and advancing existing cursors rethrow that
 same exception; a failed source cannot become a successful truncated result.
 
+If a source operation is still in progress, another read that needs an uncached
+entry throws `LogicException`. Already cached entries remain readable. Rejecting
+an overlapping read leaves the original reader and cache intact, and a rejected
+manual `next()` does not move its cursor. Once the source operation finishes,
+new cursors and manual reads can continue normally.
+
 Every cursor has a local position and shares only the lazy replay cache. Duplicate and `null` source keys are retained internally. Calling `count()` or `toArray()` forces full traversal of the wrapped source without moving the manual cursor.
 
 ## Reverse Iteration
