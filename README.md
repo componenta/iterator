@@ -50,6 +50,8 @@ array with preserved keys, null keys are represented as empty strings; duplicate
 array keys use the last value.
 If the source throws, subsequent reads and advancing existing cursors rethrow that
 same exception; a failed source cannot become a successful truncated result.
+Destroying a Fiber during an active source read invalidates the replay with a
+`LogicException` rather than treating the interrupted traversal as successful.
 
 If a source operation is still in progress, another read that needs an uncached
 entry throws `LogicException`. Already cached entries remain readable. Rejecting

@@ -68,3 +68,24 @@ it('does not invalidate a suspended source merely because another reader was rej
         ->and($replay->toArray())->toBe([1, 2])
         ->and($replay->traversed)->toBeTrue();
 });
+
+
+it('invalidates a source when its reader is destroyed during cleanup', function (): void {
+    $replay = new ReplayableIterator(new class implements Iterator {
+        public function rewind(): void {}
+        public function current(): mixed { return null; }
+        public function key(): mixed { return null; }
+        public function next(): void {}
+        public function valid(): bool { return false; }
+        public function __destruct() { Fiber::suspend('cleanup paused'); }
+    });
+    $reader = new Fiber(static fn () => count($replay));
+    expect($reader->start())->toBe('cleanup paused');
+
+    unset($reader);
+    gc_collect_cycles();
+
+    expect($replay->traversed)->toBeFalse()
+        ->and(fn () => count($replay))->toThrow(LogicException::class, 'Source read was interrupted.')
+        ->and(fn () => $replay->toArray())->toThrow(LogicException::class, 'Source read was interrupted.');
+});

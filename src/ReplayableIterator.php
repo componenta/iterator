@@ -220,6 +220,7 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
         }
 
         $this->reading = true;
+        $completed = false;
         try {
             while ($position >= $this->cacheSize) {
                 if ($this->cacheSize > 0) {
@@ -228,6 +229,7 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
 
                 if (!$this->iterable->valid()) {
                     $this->iterable = null;
+                    $completed = true;
                     return false;
                 }
 
@@ -236,6 +238,9 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
                     $this->iterable->current(),
                 ];
             }
+
+            $completed = true;
+            return true;
         } catch (Throwable $failure) {
             $this->failure = $failure;
             try {
@@ -246,10 +251,21 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
                 throw $failure;
             }
         } finally {
-            $this->reading = false;
+            try {
+                if (!$completed && $this->failure === null) {
+                    // Destroying a suspended Fiber unwinds finally without a
+                    // catchable exception. Its source position is no longer safe.
+                    $this->failure = new LogicException('Source read was interrupted.');
+                    try {
+                        $this->iterable = null;
+                    } catch (Throwable) {
+                        // Preserve the interruption as the primary failure.
+                    }
+                }
+            } finally {
+                $this->reading = false;
+            }
         }
-
-        return true;
     }
 
     private function traverseFully(): void
