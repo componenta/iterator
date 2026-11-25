@@ -57,6 +57,12 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
     }
 
     /**
+     * An active one-shot source cannot be duplicated. Use cursor() to share its
+     * replay cache safely; a shallow clone would split the cache from the source.
+     */
+    private function __clone(): void {}
+
+    /**
      * Returns an independent lazy cursor over the replayable sequence.
      *
      * Multiple cursors may be consumed in any interleaving order. They share
@@ -129,6 +135,7 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
 
     /**
      * @param bool $preserveKeys With duplicate keys, later values overwrite earlier ones.
+     * Null keys become empty strings when materialized as PHP array keys.
      * @return array<array-key, TValue>
      */
     public function toArray(bool $preserveKeys = false): array
@@ -142,7 +149,7 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
         $result = [];
 
         foreach ($this->cache as [$key, $value]) {
-            $result[$key] = $value;
+            $result[$key ?? ''] = $value;
         }
 
         return $result;
