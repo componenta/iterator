@@ -36,7 +36,7 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
     }
 
     public bool $traversed {
-        get => $this->iterable === null && $this->failure === null;
+        get => !$this->reading && $this->iterable === null && $this->failure === null;
     }
 
     private(set) int $currentPosition;
@@ -211,12 +211,12 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
             return true;
         }
 
-        if ($this->iterable === null) {
-            return false;
-        }
-
         if ($this->reading) {
             throw new LogicException('Source read is already in progress.');
+        }
+
+        if ($this->iterable === null) {
+            return false;
         }
 
         $this->reading = true;
