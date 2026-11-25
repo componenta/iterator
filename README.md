@@ -19,7 +19,7 @@ composer require componenta/iterator
 
 ## ReplayableIterator
 
-`ReplayableIterator` wraps arrays, iterators, iterator aggregates, and generators. It caches traversed entries lazily so a one-shot source can be replayed without reading the whole source up front.
+`ReplayableIterator` wraps arrays, iterators, iterator aggregates, and generators. It caches traversed entries lazily so a one-shot source can be replayed without reading the whole source up front. The wrapper owns traversal of the supplied iterator; callers must not advance it externally. A generator is consumed from its current position.
 
 ```php
 use Componenta\Stdlib\ReplayableIterator;
@@ -43,8 +43,9 @@ $first->next();
 ```
 
 `replay()` is an alias for `cursor()` and returns a new independent cursor.
-The wrapper itself cannot be cloned: a shallow clone would share an active source
-but have a separate cache. Use independent cursors instead. When converting to an
+Cloning an active wrapper is rejected: a shallow clone would share its source
+but have a separate cache. Use independent cursors instead. A fully traversed
+wrapper can be cloned with independent manual positions. When converting to an
 array with preserved keys, null keys are represented as empty strings; duplicate
 array keys use the last value.
 If the source throws, subsequent reads and advancing existing cursors rethrow that

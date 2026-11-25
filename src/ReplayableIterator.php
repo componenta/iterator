@@ -57,10 +57,15 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
     }
 
     /**
-     * An active one-shot source cannot be duplicated. Use cursor() to share its
-     * replay cache safely; a shallow clone would split the cache from the source.
+     * A shallow clone is safe only after the source has been released.
+     * Use cursor() for independent traversal while the source is active.
      */
-    private function __clone(): void {}
+    public function __clone(): void
+    {
+        if ($this->iterable !== null || $this->reading) {
+            throw new LogicException('Cannot clone an active replayable iterator; use cursor() instead.');
+        }
+    }
 
     /**
      * Returns an independent lazy cursor over the replayable sequence.
