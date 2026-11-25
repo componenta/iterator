@@ -238,8 +238,13 @@ final class ReplayableIterator implements Iterator, Countable, Arrayable
             }
         } catch (Throwable $failure) {
             $this->failure = $failure;
-            $this->iterable = null;
-            throw $failure;
+            try {
+                $this->iterable = null;
+            } finally {
+                // A throwing source destructor must not replace the original
+                // failure observed by this reader and every subsequent reader.
+                throw $failure;
+            }
         } finally {
             $this->reading = false;
         }
