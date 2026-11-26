@@ -1,5 +1,7 @@
 # Componenta Iterator
 
+[Русская версия](README.ru.md)
+
 Iterator utilities for replayable iteration, reverse traversal, string traversal, and array conversion.
 
 Use this package when a library needs iterator behavior without depending on collection frameworks.
@@ -9,6 +11,12 @@ Use this package when a library needs iterator behavior without depending on col
 ```bash
 composer require componenta/iterator
 ```
+
+## Requirements
+
+- PHP 8.4+
+- `ext-mbstring`
+- `componenta/arrayable` 1.x
 
 ## Related Packages
 
@@ -59,13 +67,26 @@ an overlapping read leaves the original reader and cache intact, and a rejected
 manual `next()` does not move its cursor. Once the source operation finishes,
 new cursors and manual reads can continue normally.
 
-Every cursor has a local position and shares only the lazy replay cache. Duplicate and `null` source keys are retained internally. Calling `count()` or `toArray()` forces full traversal of the wrapped source without moving the manual cursor.
+Every cursor has a local position and shares only the lazy replay cache. Duplicate
+and `null` source keys are retained internally. `toArray()` returns a list by
+default; `toArray(true)` preserves PHP-compatible array keys, with the last value
+winning on duplicate keys. Calling `count()` or `toArray()` forces full traversal
+without moving the manual cursor. `cacheSize`, `traversed` and `currentPosition`
+are read-only diagnostics; a failed or interrupted traversal is not `traversed`.
+
+Array input is cached immediately. A non-generator iterator is rewound once when
+wrapped; a generator is read from its current position without rewinding.
 
 ## Reverse Iteration
 
 `ReverseIterator` iterates an iterable in reverse order. It materializes values internally, so it is intended for finite iterables.
 
-`ArrayListReverseIterator` is a small reverse iterator for list arrays.
+`ReverseIterator` preserves original keys during traversal. It reads the source on
+first rewind; `withIterable()` creates a new wrapper for a different source.
+`toArray()` follows `iterator_to_array()` key semantics.
+
+`ArrayListReverseIterator` is a reverse iterator for list arrays (contiguous integer
+keys starting at zero); it preserves the original indexes.
 
 ## StringIterator
 
@@ -78,9 +99,23 @@ Every cursor has a local position and shares only the lazy replay cache. Duplica
 - `remaining()`
 - `peek()`
 
+`moveTo()` selects an existing zero-based character index and rejects out-of-range
+positions. `read()`, `remaining()` and `peek()` do not move the cursor.
+`count()` returns the character count, `getEncoding()` returns the encoding and
+`withString()` creates a new iterator with the same encoding. `string`, `length`
+and `position` are read-only from outside; casting to string returns the source.
+
+`StringIterator::forward()` accepts non-negative steps and can advance to the end
+position, where `isEnd()` is true and `current()` is null. A zero step preserves
+the position; a step beyond the remaining length stops at the end. Calling
+`backward()` from the end returns to the final character. Negative movement steps
+throw `InvalidArgumentException`.
+
 ## Array Conversion
 
-`IteratorToArray` exposes a `toArray()` contract for iterator classes that can materialize their contents.
+`IteratorToArray` is a trait implementing `toArray()` through `iterator_to_array()`.
+The public array-conversion interface is `Componenta\Arrayable\Arrayable`.
+`ReplayableIterator` provides its own key-preserving or list conversion.
 
 ## Development
 
@@ -94,10 +129,3 @@ CI validates Composer metadata, lints PHP files, and runs Pest on PHP 8.4 and 8.
 ## Memory Notes
 
 Replayable and reverse iterators trade memory for traversal behavior. They are appropriate for finite sequences. For large PSR-7 streams, use `componenta/stream-iterator`, which keeps only the current chunk.
-
-
-`StringIterator::forward()` accepts non-negative steps and can advance to the end
-position, where `isEnd()` is true and `current()` is null. A zero step preserves
-the position; a step beyond the remaining length stops at the end. Calling
-`backward()` from the end returns to the final character. Negative movement steps
-throw `InvalidArgumentException`.
